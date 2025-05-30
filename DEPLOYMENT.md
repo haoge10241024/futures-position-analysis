@@ -57,15 +57,15 @@ your-repo/
 ### requirements.txt 说明
 ```txt
 streamlit==1.28.0         # Streamlit框架（固定版本）
-pandas==1.5.3             # 数据处理（兼容版本）
-numpy==1.24.3             # 数值计算（兼容版本）
+pandas==1.3.5             # 数据处理（Python 3.8兼容版本）
+numpy==1.21.6             # 数值计算（Python 3.8兼容版本）
 plotly==5.15.0            # 图表绘制
 akshare==1.12.0           # 金融数据获取
-openpyxl==3.1.2           # Excel读写
-xlsxwriter==3.1.2         # Excel写入
-requests==2.31.0          # HTTP请求
+openpyxl==3.0.10          # Excel读写
+xlsxwriter==3.0.9         # Excel写入
+requests==2.28.2          # HTTP请求
 python-dateutil==2.8.2    # 日期处理
-pytz==2023.3              # 时区处理
+pytz==2022.7              # 时区处理
 ```
 
 ### Streamlit配置
@@ -74,8 +74,15 @@ pytz==2023.3              # 时区处理
 - 优化云端性能
 
 ### Python版本控制
-- `runtime.txt` - 指定Python 3.9版本
+- `runtime.txt` - 指定Python 3.8版本（避免Python 3.13的distutils问题）
 - `.python-version` - 本地开发版本控制
+
+### 版本选择说明
+- **Python 3.8**: 选择此版本是因为：
+  - 稳定性好，兼容性强
+  - 避免Python 3.13中移除distutils模块的问题
+  - 与所有依赖包版本完全兼容
+- **依赖包版本**: 选择经过测试的稳定版本组合，确保在Streamlit Cloud上正常运行
 
 ## 🔧 常见问题解决
 
@@ -85,13 +92,15 @@ pytz==2023.3              # 时区处理
 - 主文件路径错误
 - 代码中有语法错误
 - Python版本不兼容（如pandas在Python 3.13下编译失败）
+- distutils模块缺失（Python 3.12+版本问题）
 
 **解决方案**：
 - 检查GitHub仓库中的文件是否完整
 - 确认streamlit_app.py文件名正确
 - 查看部署日志中的错误信息
-- 确保使用Python 3.9版本（通过runtime.txt指定）
+- 确保使用Python 3.8版本（通过runtime.txt指定）
 - 使用固定版本号的依赖包
+- 如果遇到"ModuleNotFoundError: No module named 'distutils'"错误，确保使用Python 3.8而不是3.12+版本
 
 ### 2. 应用运行缓慢
 **可能原因**：
