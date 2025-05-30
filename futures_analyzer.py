@@ -498,7 +498,7 @@ class FuturesAnalysisEngine:
     
     def full_analysis(self, trade_date: str, progress_callback=None) -> Dict[str, Any]:
         """
-        完整分析流程 - 总是包含期限结构分析，支持性能优化模式
+        完整分析流程 - 总是包含期限结构分析
         :param trade_date: 交易日期 YYYYMMDD
         :param progress_callback: 进度回调函数
         :return: 分析结果
@@ -516,55 +516,26 @@ class FuturesAnalysisEngine:
         }
         
         try:
-            # 检查是否启用性能优化模式
-            try:
-                from performance_optimizer import FastDataManager
-                fast_manager = FastDataManager(self.data_manager.data_dir)
-                use_fast_mode = True
-                if progress_callback:
-                    progress_callback("🚀 使用性能优化模式获取数据...", 0.1)
-            except ImportError:
-                use_fast_mode = False
-                if progress_callback:
-                    progress_callback("使用标准模式获取数据...", 0.1)
-            
             # 1. 获取持仓数据
-            if use_fast_mode:
-                # 使用快速模式
-                if not fast_manager.fetch_position_data_fast(trade_date, progress_callback):
-                    if progress_callback:
-                        progress_callback("❌ 持仓数据获取失败", 0.6)
-                    return None
-            else:
-                # 使用标准模式
-                if not self.data_manager.fetch_position_data(trade_date, progress_callback):
-                    if progress_callback:
-                        progress_callback("❌ 持仓数据获取失败", 0.6)
-                    return None
+            if progress_callback:
+                progress_callback("开始获取持仓数据...", 0.1)
+            
+            if not self.data_manager.fetch_position_data(trade_date, progress_callback):
+                return None
             
             # 2. 获取期货行情数据
             if progress_callback:
                 progress_callback("开始获取期货行情数据...", 0.6)
             
-            if use_fast_mode:
-                # 使用快速模式获取行情数据
-                price_data = fast_manager.fetch_price_data_fast(trade_date, progress_callback)
-            else:
-                # 使用标准模式获取行情数据
-                price_data = self.data_manager.fetch_price_data(trade_date, progress_callback)
+            price_data = self.data_manager.fetch_price_data(trade_date, progress_callback)
             
             # 3. 分析持仓数据
             if progress_callback:
                 progress_callback("开始分析持仓数据...", 0.8)
             
             position_data = self.data_manager.load_position_data()
-            if not position_data:
-                if progress_callback:
-                    progress_callback("⚠️ 未找到持仓数据文件", 0.85)
-                # 即使没有持仓数据，也继续进行期限结构分析
-            else:
-                position_results = self._analyze_positions(position_data, progress_callback)
-                results['position_analysis'] = position_results
+            position_results = self._analyze_positions(position_data, progress_callback)
+            results['position_analysis'] = position_results
             
             # 4. 期限结构分析
             if progress_callback:
@@ -573,9 +544,6 @@ class FuturesAnalysisEngine:
             if not price_data.empty:
                 term_results = self.term_analyzer.analyze_term_structure(price_data)
                 results['term_structure'] = term_results
-            else:
-                if progress_callback:
-                    progress_callback("⚠️ 期货行情数据为空，跳过期限结构分析", 0.92)
             
             # 5. 生成总结
             if progress_callback:
@@ -584,15 +552,12 @@ class FuturesAnalysisEngine:
             results['summary'] = self._generate_summary(results)
             
             if progress_callback:
-                progress_callback("✅ 分析完成", 1.0)
+                progress_callback("分析完成", 1.0)
             
             return results
             
         except Exception as e:
-            error_msg = f"分析过程出错: {str(e)}"
-            print(error_msg)
-            if progress_callback:
-                progress_callback(f"❌ {error_msg}", 1.0)
+            print(f"分析过程出错: {str(e)}")
             return None
     
     def _analyze_positions(self, position_data: Dict[str, pd.DataFrame], progress_callback=None) -> Dict[str, Any]:
