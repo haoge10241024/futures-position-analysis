@@ -7,7 +7,8 @@
 - [ ] `futures_analyzer.py` - 核心分析模块  
 - [ ] `config.py` - 配置文件
 - [ ] `utils.py` - 工具函数
-- [ ] `requirements.txt` - 依赖包列表
+- [ ] `requirements.txt` - 依赖包列表（固定版本号）
+- [ ] `runtime.txt` - Python版本指定（python-3.9）
 - [ ] `README.md` - 项目说明文档
 - [ ] `.gitignore` - Git忽略文件
 - [ ] `.streamlit/config.toml` - Streamlit配置
@@ -15,6 +16,7 @@
 
 ### 📋 可选文件
 - [ ] `app.py` - 简化启动脚本
+- [ ] `.python-version` - 本地Python版本控制
 - [ ] `.github/workflows/test.yml` - 自动化测试
 - [ ] `DEPLOY_CHECKLIST.md` - 部署清单
 
