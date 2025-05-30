@@ -136,75 +136,27 @@ def smart_cache(max_age_hours: int = 24):
 
 @st.cache_data(ttl=3600)  # Streamlit缓存1小时
 def cached_data_fetch(func_name: str, date: str, exchange: str = None):
-    """缓存的数据获取函数 - 增强版本，包含超时控制"""
+    """缓存的数据获取函数"""
     import akshare as ak
-    import signal
-    import time
-    
-    def timeout_handler(signum, frame):
-        raise TimeoutError("数据获取超时")
     
     try:
-        # 为广期所设置更长的超时时间
-        if func_name == "futures_gfex_position_rank":
-            timeout_seconds = 30  # 广期所30秒超时（从15秒增加）
-        else:
-            timeout_seconds = 30  # 其他交易所30秒超时
-        
-        # 设置超时信号（仅在非Windows系统）
-        if hasattr(signal, 'SIGALRM'):
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(timeout_seconds)
-        
-        start_time = time.time()
-        
         if func_name == "futures_dce_position_rank":
-            result = ak.futures_dce_position_rank(date=date)
+            return ak.futures_dce_position_rank(date=date)
         elif func_name == "get_cffex_rank_table":
-            result = ak.get_cffex_rank_table(date=date)
+            return ak.get_cffex_rank_table(date=date)
         elif func_name == "get_czce_rank_table":
-            result = ak.get_czce_rank_table(date=date)
+            return ak.get_czce_rank_table(date=date)
         elif func_name == "get_shfe_rank_table":
-            result = ak.get_shfe_rank_table(date=date)
+            return ak.get_shfe_rank_table(date=date)
         elif func_name == "futures_gfex_position_rank":
-            # 广期所特殊处理 - 添加重试机制
-            max_retries = 3  # 增加重试次数
-            for attempt in range(max_retries):
-                try:
-                    if attempt > 0:
-                        st.info(f"🔄 广期所数据获取重试 {attempt}/{max_retries-1}")
-                    result = ak.futures_gfex_position_rank(date=date)
-                    break
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        st.warning(f"广期所数据获取失败（已重试{max_retries}次），跳过该交易所: {str(e)}")
-                        return None
-                    time.sleep(3)  # 重试前等待3秒（增加等待时间）
+            return ak.futures_gfex_position_rank(date=date)
         elif func_name == "get_futures_daily" and exchange:
-            result = ak.get_futures_daily(start_date=date, end_date=date, market=exchange)
+            return ak.get_futures_daily(start_date=date, end_date=date, market=exchange)
         else:
             return None
-        
-        # 取消超时信号
-        if hasattr(signal, 'SIGALRM'):
-            signal.alarm(0)
-        
-        elapsed_time = time.time() - start_time
-        if elapsed_time > 8:  # 如果超过8秒，显示提示
-            st.info(f"⏱️ {func_name} 数据获取耗时 {elapsed_time:.1f} 秒")
-        
-        return result
-        
-    except TimeoutError:
-        st.warning(f"⏰ {func_name} 数据获取超时，跳过该交易所")
-        return None
     except Exception as e:
-        st.warning(f"❌ {func_name} 数据获取失败: {str(e)}")
+        st.error(f"数据获取失败 {func_name}: {str(e)}")
         return None
-    finally:
-        # 确保清理超时信号
-        if hasattr(signal, 'SIGALRM'):
-            signal.alarm(0)
 
 class FastDataManager:
     """快速数据管理器"""
@@ -248,24 +200,17 @@ class FastDataManager:
         }
     
     def fetch_position_data_fast(self, trade_date: str, progress_callback=None) -> bool:
-        """快速获取持仓数据 - 使用并发和缓存，优化广期所处理"""
+        """快速获取持仓数据 - 使用并发和缓存"""
         success_count = 0
         total_exchanges = len(self.exchange_config)
-        failed_exchanges = []
         
-        # 重新排序，将广期所放到最后处理
-        sorted_exchanges = sorted(
-            self.exchange_config.items(), 
-            key=lambda x: x[1]['priority']
-        )
-        
-        # 使用线程池并发获取数据，但限制并发数避免网络拥堵
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        # 使用线程池并发获取数据
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
             future_to_exchange = {}
             
-            for exchange_name, config in sorted_exchanges:
+            for exchange_name, config in self.exchange_config.items():
                 future = executor.submit(
-                    self._fetch_single_exchange_data_with_timeout,
+                    self._fetch_single_exchange_data,
                     exchange_name, config, trade_date
                 )
                 future_to_exchange[future] = exchange_name
@@ -279,36 +224,21 @@ class FastDataManager:
                     progress_callback(f"已完成 {exchange_name} 数据获取", progress)
                 
                 try:
-                    success = future.result(timeout=60)  # 60秒总超时（增加超时时间）
+                    success = future.result(timeout=60)  # 60秒超时
                     if success:
                         success_count += 1
-                        st.success(f"✅ {exchange_name} 数据获取成功")
-                    else:
-                        failed_exchanges.append(exchange_name)
-                        st.warning(f"⚠️ {exchange_name} 数据获取失败，但不影响其他交易所")
                 except Exception as e:
-                    failed_exchanges.append(exchange_name)
-                    st.warning(f"⚠️ {exchange_name} 数据获取异常: {str(e)}")
+                    st.warning(f"{exchange_name} 数据获取失败: {str(e)}")
                     continue
         
         if progress_callback:
             progress_callback("持仓数据获取完成", 0.6)
         
-        # 显示获取结果摘要
-        if success_count > 0:
-            st.info(f"📊 成功获取 {success_count}/{total_exchanges} 个交易所数据")
-            if failed_exchanges:
-                st.info(f"⚠️ 未获取到数据的交易所: {', '.join(failed_exchanges)}")
-        
         return success_count > 0
     
-    def _fetch_single_exchange_data_with_timeout(self, exchange_name: str, config: dict, trade_date: str) -> bool:
-        """获取单个交易所数据 - 增强版本，包含特殊处理"""
+    def _fetch_single_exchange_data(self, exchange_name: str, config: dict, trade_date: str) -> bool:
+        """获取单个交易所数据"""
         try:
-            # 广期所特殊处理
-            if exchange_name == "广期所":
-                st.info(f"🔄 正在尝试获取{exchange_name}数据（可能较慢）...")
-            
             # 使用缓存的数据获取函数
             data_dict = cached_data_fetch(config["func_name"], trade_date)
             
@@ -322,18 +252,11 @@ class FastDataManager:
                         df.to_excel(writer, sheet_name=clean_name, index=False)
                 
                 return True
-            else:
-                # 如果是广期所失败，给出特殊提示
-                if exchange_name == "广期所":
-                    st.info("ℹ️ 广期所数据暂时无法获取，这是常见情况，不影响其他分析")
-                return False
             
         except Exception as e:
-            if exchange_name == "广期所":
-                st.info(f"ℹ️ 广期所数据获取遇到问题: {str(e)}，继续处理其他交易所")
-            else:
-                st.warning(f"获取{exchange_name}数据失败: {str(e)}")
-            return False
+            st.warning(f"获取{exchange_name}数据失败: {str(e)}")
+            
+        return False
     
     @smart_cache(max_age_hours=6)
     def fetch_price_data_fast(self, trade_date: str, progress_callback=None) -> pd.DataFrame:
