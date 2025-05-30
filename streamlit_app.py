@@ -28,6 +28,14 @@ except ImportError:
     PERFORMANCE_OPTIMIZATION_AVAILABLE = False
     st.warning("性能优化模块未找到，将使用标准模式")
 
+# 导入云端数据获取器
+try:
+    from cloud_data_fetcher import cloud_fetcher
+    CLOUD_FETCHER_AVAILABLE = True
+except ImportError:
+    CLOUD_FETCHER_AVAILABLE = False
+    st.warning("云端数据获取器未找到，将使用标准模式")
+
 # 页面配置
 st.set_page_config(
     page_title=f"{SYSTEM_CONFIG['app_name']} v{SYSTEM_CONFIG['version']} - 性能优化版",
@@ -116,6 +124,10 @@ class StreamlitApp:
             st.session_state.retail_seats = STRATEGY_CONFIG["家人席位反向操作策略"]["default_retail_seats"].copy()
         if 'performance_mode' not in st.session_state:
             st.session_state.performance_mode = PERFORMANCE_OPTIMIZATION_AVAILABLE
+        if 'demo_mode' not in st.session_state:
+            st.session_state.demo_mode = False
+        if 'cloud_fetcher_mode' not in st.session_state:
+            st.session_state.cloud_fetcher_mode = CLOUD_FETCHER_AVAILABLE
     
     def render_sidebar(self):
         """渲染侧边栏"""
@@ -142,9 +154,40 @@ class StreamlitApp:
             else:
                 st.info("ℹ️ 标准模式运行")
             
-            # 网络测试
-            if st.button("🌐 测试网络连接"):
-                self.test_network_connection()
+            # 云端模式状态
+            if CLOUD_FETCHER_AVAILABLE:
+                if st.session_state.cloud_fetcher_mode:
+                    st.success("☁️ 云端优化已启用")
+                else:
+                    st.warning("⚠️ 云端优化未启用")
+            
+            # 演示模式控制
+            st.subheader("🎭 运行模式")
+            demo_mode = st.checkbox(
+                "演示模式",
+                value=st.session_state.demo_mode,
+                help="使用模拟数据，无需网络连接"
+            )
+            if demo_mode != st.session_state.demo_mode:
+                st.session_state.demo_mode = demo_mode
+                st.rerun()
+            
+            if st.session_state.demo_mode:
+                st.info("🎭 当前为演示模式，使用模拟数据")
+            else:
+                st.info("📡 当前为实时模式，获取真实数据")
+            
+            # 网络测试和诊断
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🌐 测试网络"):
+                    self.test_network_connection()
+            with col2:
+                if st.button("🔍 网络诊断"):
+                    if CLOUD_FETCHER_AVAILABLE:
+                        cloud_fetcher.diagnose_network_issues()
+                    else:
+                        st.warning("云端诊断功能不可用")
             
             st.divider()
             
@@ -291,8 +334,43 @@ class StreamlitApp:
         try:
             st.session_state.analysis_running = True
             
+            # 演示模式处理
+            if st.session_state.demo_mode:
+                st.info("🎭 演示模式：正在创建模拟数据...")
+                if CLOUD_FETCHER_AVAILABLE:
+                    cloud_fetcher.create_demo_data(trade_date_str)
+                else:
+                    st.error("演示模式不可用，请启用云端数据获取器")
+                    return
+            
             # 运行分析
             with st.spinner("正在进行期货持仓分析..."):
+                # 如果启用了云端获取器且不是演示模式，使用云端获取器
+                if CLOUD_FETCHER_AVAILABLE and not st.session_state.demo_mode:
+                    # 使用云端数据获取器
+                    progress_callback("正在使用云端优化获取数据...", 0.1)
+                    
+                    # 获取持仓数据
+                    position_success = cloud_fetcher.fetch_position_data_with_fallback(
+                        trade_date_str, progress_callback
+                    )
+                    
+                    if not position_success:
+                        st.error("❌ 所有交易所数据获取失败")
+                        
+                        # 询问是否使用演示数据
+                        if st.button("🎭 使用演示数据继续体验"):
+                            st.session_state.demo_mode = True
+                            cloud_fetcher.create_demo_data(trade_date_str)
+                            st.rerun()
+                        return
+                    
+                    # 获取行情数据
+                    price_data = cloud_fetcher.fetch_price_data_with_fallback(
+                        trade_date_str, progress_callback
+                    )
+                
+                # 使用标准分析引擎
                 results = self.engine.full_analysis(trade_date_str, progress_callback)
             
             # 清除进度显示
@@ -302,13 +380,25 @@ class StreamlitApp:
             if results:
                 st.session_state.analysis_results = results
                 st.session_state.last_analysis_date = trade_date_str
-                st.success(f"✅ 分析完成！共分析了 {results['summary']['statistics']['total_contracts']} 个合约")
+                
+                # 添加模式标识
+                results['metadata']['demo_mode'] = st.session_state.demo_mode
+                
+                if st.session_state.demo_mode:
+                    st.success(f"✅ 演示分析完成！共分析了 {results['summary']['statistics']['total_contracts']} 个合约（模拟数据）")
+                else:
+                    st.success(f"✅ 分析完成！共分析了 {results['summary']['statistics']['total_contracts']} 个合约")
                 st.rerun()
             else:
-                st.error("❌ 分析失败，请检查网络连接或稍后重试")
+                st.error("❌ 分析失败，请检查网络连接或尝试演示模式")
                 
         except Exception as e:
             st.error(f"❌ 分析过程出错: {str(e)}")
+            
+            # 提供演示模式作为备选
+            if not st.session_state.demo_mode:
+                st.info("💡 您可以尝试启用演示模式来体验系统功能")
+                
         finally:
             st.session_state.analysis_running = False
     
@@ -427,8 +517,10 @@ class StreamlitApp:
         
         # 分析信息
         retail_seats_str = "、".join(metadata.get('retail_seats', []))
+        demo_mode_info = " (演示数据)" if metadata.get('demo_mode', False) else ""
+        
         st.info(f"""
-        📅 **分析日期**: {metadata['trade_date']}  
+        📅 **分析日期**: {metadata['trade_date']}{demo_mode_info}  
         ⏰ **分析时间**: {metadata['analysis_time'][:19]}  
         👥 **家人席位**: {retail_seats_str}
         """)
