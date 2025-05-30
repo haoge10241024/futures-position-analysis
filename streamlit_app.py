@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 期货持仓分析系统 - Streamlit Web应用
-全新改进版本，整合所有功能
+全新改进版本，整合所有功能，包含性能优化
 作者：7haoge
 邮箱：953534947@qq.com
 """
@@ -20,10 +20,18 @@ from datetime import datetime, timedelta
 from futures_analyzer import FuturesAnalysisEngine, validate_trade_date, get_recent_trade_date
 from config import STRATEGY_CONFIG, SYSTEM_CONFIG
 
+# 导入性能优化模块
+try:
+    from performance_optimizer import optimize_streamlit_performance, show_performance_metrics, FastDataManager
+    PERFORMANCE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    PERFORMANCE_OPTIMIZATION_AVAILABLE = False
+    st.warning("性能优化模块未找到，将使用标准模式")
+
 # 页面配置
 st.set_page_config(
-    page_title=f"{SYSTEM_CONFIG['app_name']} v{SYSTEM_CONFIG['version']}",
-    page_icon="📊",
+    page_title=f"{SYSTEM_CONFIG['app_name']} v{SYSTEM_CONFIG['version']} - 性能优化版",
+    page_icon="🚀",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -83,10 +91,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 class StreamlitApp:
-    """Streamlit应用主类"""
+    """Streamlit应用主类 - 包含性能优化功能"""
     
     def __init__(self):
         self.init_session_state()
+        
+        # 启用性能优化
+        if PERFORMANCE_OPTIMIZATION_AVAILABLE:
+            optimize_streamlit_performance()
+            self.fast_data_manager = FastDataManager("data")
+        
         # 初始化分析引擎时使用会话状态中的家人席位配置
         self.engine = FuturesAnalysisEngine("data", st.session_state.retail_seats)
     
@@ -100,6 +114,8 @@ class StreamlitApp:
             st.session_state.analysis_running = False
         if 'retail_seats' not in st.session_state:
             st.session_state.retail_seats = STRATEGY_CONFIG["家人席位反向操作策略"]["default_retail_seats"].copy()
+        if 'performance_mode' not in st.session_state:
+            st.session_state.performance_mode = PERFORMANCE_OPTIMIZATION_AVAILABLE
     
     def render_sidebar(self):
         """渲染侧边栏"""
@@ -112,6 +128,19 @@ class StreamlitApp:
             if not os.path.exists(data_dir):
                 os.makedirs(data_dir)
             st.success(f"✅ 数据目录: {data_dir}")
+            
+            # 性能状态
+            if PERFORMANCE_OPTIMIZATION_AVAILABLE:
+                if st.session_state.performance_mode:
+                    st.success("🚀 性能优化已启用")
+                    
+                    # 显示性能指标
+                    with st.expander("📊 性能监控", expanded=False):
+                        show_performance_metrics()
+                else:
+                    st.warning("⚠️ 性能优化未启用")
+            else:
+                st.info("ℹ️ 标准模式运行")
             
             # 网络测试
             if st.button("🌐 测试网络连接"):
@@ -183,6 +212,16 @@ class StreamlitApp:
             st.divider()
             
             # 分析说明
+            performance_info = ""
+            if PERFORMANCE_OPTIMIZATION_AVAILABLE and st.session_state.performance_mode:
+                performance_info = """
+            🚀 **性能优化已启用**
+            - 智能缓存系统
+            - 并发数据获取
+            - 网络连接优化
+            
+            """
+            
             st.info(f"""
             📋 **分析内容**
             - 多空力量变化策略
@@ -193,7 +232,7 @@ class StreamlitApp:
             
             👥 **当前家人席位数量**: {len(st.session_state.retail_seats)}
             
-            ⏱️ **预计用时**: 2-5分钟
+            {performance_info}⏱️ **预计用时**: {"30秒-2分钟" if PERFORMANCE_OPTIMIZATION_AVAILABLE else "2-5分钟"}
             """)
             
             # 分析按钮
