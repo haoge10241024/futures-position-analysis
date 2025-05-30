@@ -7,4 +7,5 @@ openpyxl
 xlsxwriter
 requests
 python-dateutil
-pytz 
+pytz
+urllib3 
